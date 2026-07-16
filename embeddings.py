@@ -8,9 +8,12 @@ class TokenEmbedding(nn.Module):
         self.embedding = nn.Embedding(vocab_size, d_model)
         self.d_model = d_model 
 
+    # per section 3.4 (Embeddings and Softmax)
     def forward(self, x):
         return self.embedding(x) * math.sqrt(self.d_model)
     
+# this embeds positional meaning to the tokens for attention later, keeps tokens from being oblivious 
+# of their position and context in the token stream
 class PositionalEncoding(nn.Module):
     # PE(pos, 2i) = sin(pos / 10000^(2i/d_model))
     # PE(pos, 2i + 1) = cos(pos / 10000^(2i/d_model))
