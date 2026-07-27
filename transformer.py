@@ -87,15 +87,18 @@ class DecoderLayer(nn.Module):
 
     # what does this need to do:
     # masked multihead attention, then add & norm
-    # multihead attention with context from the final encoder layer output
+    # multihead attention with context from the final encoder layer output (skipped if no context given)
     # feed forward, return the final add and norm 
     # tgt_key_padding_mask: pad mask for the decoder's own input (masked self-attn)
     # memory_key_padding_mask: pad mask for the encoder output (cross-attn)
-    def forward(self, x, context, tgt_key_padding_mask=None, memory_key_padding_mask=None):
+    # context=None turns this into a plain GPT-style causal decoder block (no cross-attention) —
+    # used for standalone next-token language modeling instead of seq2seq translation.
+    def forward(self, x, context=None, tgt_key_padding_mask=None, memory_key_padding_mask=None):
         sublayer1 = self.masked_mh_attn(x, key_padding_mask=tgt_key_padding_mask)
         middle_layer = self.add_and_norm_masked_mh_attn(x, sublayer1)
-        sublayer2 = self.mh_attn(middle_layer, context, key_padding_mask=memory_key_padding_mask)
-        middle_layer = self.add_and_norm_mh_attn(middle_layer, sublayer2)
+        if context is not None:
+            sublayer2 = self.mh_attn(middle_layer, context, key_padding_mask=memory_key_padding_mask)
+            middle_layer = self.add_and_norm_mh_attn(middle_layer, sublayer2)
         sublayer3 = self.ffn(middle_layer)
         return self.add_and_norm_ffn(middle_layer, sublayer3)
     
@@ -108,7 +111,7 @@ class DecoderStack(nn.Module):
             layer.ffn = FeedForwardNetwork(d_model, d_ff)
             self.layer_list.append(layer)
 
-    def forward(self, x, context, tgt_key_padding_mask=None, memory_key_padding_mask=None):
+    def forward(self, x, context=None, tgt_key_padding_mask=None, memory_key_padding_mask=None):
         cur_input = x
         for layer in self.layer_list:
             cur_input = layer(
