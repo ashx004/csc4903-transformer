@@ -3,7 +3,8 @@ import torch.nn as nn
 import math
 
 # is_masked what type of attention we are doing, True -> masked, False -> normal MH attention
-def scaled_dot_product_attention(Q, K, V, is_masked=True):
+# key_padding_mask: (batch, kv_seq_len) bool tensor, True where the key position is <pad> and should be ignored
+def scaled_dot_product_attention(Q, K, V, is_masked=True, key_padding_mask=None):
     d_k = Q.size(-1)
     # first mat mul block on left of diagram
     scores = (Q @ K.mT) / math.sqrt(d_k)
@@ -11,8 +12,14 @@ def scaled_dot_product_attention(Q, K, V, is_masked=True):
     # applies causal mask if we are in the decoder layer
     if is_masked:
         seq_len = scores.size(-1)
-        causal_mask = torch.triu(torch.ones(seq_len, seq_len, dtype=torch.bool), diagonal=1)
+        causal_mask = torch.triu(torch.ones(seq_len, seq_len, dtype=torch.bool, device=scores.device), diagonal=1)
         scores = scores.masked_fill(causal_mask, -1e9)
+
+    # mask out padding tokens in the keys so we never attend to them
+    if key_padding_mask is not None:
+        # key_padding_mask: (batch, kv_seq_len) -> (batch, 1, 1, kv_seq_len) so it broadcasts over heads and query positions
+        mask = key_padding_mask[:, None, None, :]
+        scores = scores.masked_fill(mask, -1e9)
 
     # we want to softmax the last position in the tensor (i.e, dim=-1 applies softmax across just the very last dimension)
     weights = torch.softmax(scores, dim=-1)
@@ -33,7 +40,8 @@ class MultiHeadAttention(nn.Module):
         self.W_o = nn.Linear(d_model, d_model, bias=False)
 
     # in the case of the decoder layer, context is needed from the final output of the encoder stack for attention
-    def forward(self, x, context=None):
+    # key_padding_mask: (batch, kv_seq_len) bool tensor, True at <pad> positions of whichever sequence supplies K/V
+    def forward(self, x, context=None, key_padding_mask=None):
         # grab dimensions needed for computation
         batch_size, seq_len, _ = x.size()
 
@@ -56,7 +64,7 @@ class MultiHeadAttention(nn.Module):
         V = V.view(batch_size, kv_seq_len, self.num_heads, self.d_head).transpose(1, 2)
 
         # perform parallel scaled_dot_product_attention across all the heads that Q, K, and V have been split into
-        output = scaled_dot_product_attention(Q, K, V, self.is_encoded)
+        output = scaled_dot_product_attention(Q, K, V, self.is_encoded, key_padding_mask=key_padding_mask)
 
         # concatenating all heads back into the original configuration before split
         output = output.transpose(1, 2).contiguous().view(batch_size, seq_len, self.d_model)
