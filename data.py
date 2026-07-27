@@ -229,6 +229,7 @@ def build_dataloaders(
     max_len: int = 128,
     vocab_size: int = 32000,
     num_workers: int = 0,
+    max_train_samples: int | None = None,
 ) -> tuple[DataLoader, DataLoader, Vocab, Vocab]:
     """Download IWSLT'14 EN→DE, tokenize, and return DataLoaders.
 
@@ -242,6 +243,10 @@ def build_dataloaders(
         BPE vocabulary size for each language.
     num_workers : int
         DataLoader workers.
+    max_train_samples : int | None
+        If set, use only this many training sentence pairs (post-filtering).
+        Useful for quick iteration / small time-budget runs. Tokenizers are
+        still trained on the full training set for vocabulary coverage.
 
     Returns
     -------
@@ -298,6 +303,11 @@ def build_dataloaders(
 
     print(f"  Train: {len(train_src)} sentence pairs")
     print(f"  Val:   {len(val_src)} sentence pairs")
+
+    if max_train_samples is not None and max_train_samples < len(train_src):
+        train_src = train_src[:max_train_samples]
+        train_tgt = train_tgt[:max_train_samples]
+        print(f"  Subsetting train to {len(train_src)} sentence pairs (max_train_samples)")
 
     # ── 4. DataLoaders ─────────────────────────────────────────────────
     train_ds = TranslationDataset(train_src, train_tgt)
